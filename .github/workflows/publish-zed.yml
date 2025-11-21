@@ -1,0 +1,76 @@
+name: Publish Zed Extension
+
+env:
+  NODE_VERSION: 24.11.1
+
+on:
+  # TODO: Change to run on tags?
+  # push:
+  #   tags:
+  #     - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag to publish'
+        required: false
+        default: ''
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+    steps:
+      - name: Setting up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cloning repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 5
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Zed manifest
+        run: npm run build
+
+      - name: Prepare artifact files
+        run: |
+          mkdir ./dist/icon_themes
+          mv ./dist/src/vsicons-icon-theme-zed.json ./dist/icon_themes/vsicons-icon-theme-zed.json
+          mv ./icons ./dist/icons
+
+      - name: Uploading Zed publish artifact
+        uses: actions/upload-artifact@v5
+        id: artifact
+        with:
+          name: publish-zed
+          path: |
+            dist/icon_themes
+            dist/icons
+          if-no-files-found: error
+          retention-days: 1
+
+      # TODO: Remove debug info
+      - name: Run Zed repository publish workflow
+        run: |
+          echo "Artifact ID: ${{ steps.artifact.outputs.artifact-id }}"
+          echo "Workflow Run ID: ${{ github.run_id }}"
+
+  deploy:
+    # TODO: Use real path when available
+    # uses: vscode-icons/vscode-icons-zed/.github/workflows/publish.yml@master
+    uses: csvn/vscode-icons-zed/.github/workflows/tag-release.yml@ci/automatic-extension-publish
+    needs: package
+    permissions:
+      actions: read
+    with:
+      # TODO: Remove fallback version
+      version: ${{ inputs.version || github.ref_name || 'v12.16.0' }}
+      artifact-id: ${{ needs.package.outputs.artifact-id }}
+      run-id: ${{ github.run_id }}
+    secrets:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
